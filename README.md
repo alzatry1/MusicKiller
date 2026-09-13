@@ -1,137 +1,151 @@
 # MusicKiller 使用说明书
 
-Windows 10 64位 内核驱动工具：**拦截网易云音乐 / QQ音乐进程运行**。当 `C:\allow.txt` 存在时放行，不存在时目标进程无法启动、已运行的会被强制结束。
+阻止 **网易云音乐 / QQ音乐** 在 Windows 10 (64位) 上运行的小工具。当 `C:\allow.txt` 存在时放行，不存在时目标进程一启动就被静默关闭。
 
-> 实现参考自微软官方驱动示例 `Windows-driver-samples/general/obcallback`（基于 `PsSetCreateProcessNotifyRoutineEx` 拒绝进程创建）。
->
+本仓库提供**两个版本**，按需选用：
+
+| | ⭐ 纯EXE版 (推荐) | 驱动版 (进阶) |
+|---|---|---|
+| 文件 | `MusicKiller.exe`（单文件） | `MusicKiller.sys` + `mkctl.exe` |
+| 原理 | 每秒扫描进程列表，发现目标直接结束 | 内核回调，进程创建瞬间直接拒绝 |
+| 无感知 | ✅ 无窗口、无控制台、无提示 | ✅ |
+| 需要管理员 | ❌（仅 `allow on`/`install all` 需要） | ✅ |
+| 需要测试签名/重启/关Secure Boot | ❌ 全都不需要 | ✅ 都需要 |
+| 拦截强度 | 进程启动后 ≤1 秒被杀（可能闪一下窗口） | 进程根本创建不了（更强） |
+| 蓝屏风险 | 零（纯用户态） | 极低（仅文档化API） |
+| 卸载 | `uninstall` 一键清除 | `mkctl uninstall` |
+
 > ⚠️ 仅供学习与个人自律用途，请勿用于未经授权的计算机。
 
 ---
 
-## 1. 文件清单
+## 一、纯EXE版（推荐）使用说明
 
-| 文件 | 说明 |
-|---|---|
-| `MusicKiller.sys` | 内核驱动（CI 编译 + 测试签名） |
-| `mkctl.exe` | 驱动注入/控制程序（一键安装、状态查询、放行开关） |
-| `使用说明书.md` | 本文档 |
+### 1. 安装（装一次，永久生效）
 
-## 2. 工作原理
-
-- 驱动加载后向系统注册**进程创建回调**。任何新进程启动时，驱动检查其镜像文件名（按**前缀**匹配，大小写不敏感）：
-  - 命中 `cloudmusic*`（网易云音乐）/ `qqmusic*`（QQ音乐）/ `qmbrowser*`（QQ音乐内置浏览器）：
-    - `C:\allow.txt` **存在** → 放行，正常启动；
-    - `C:\allow.txt` **不存在** → 拒绝创建，系统提示“拒绝访问 / 无法启动”。
-- 启动驱动时，控制器会**强制结束**仍在运行的目标进程（驱动随系统自动启动，早于用户登录加载，重启后目标程序从一开始就无法启动）。
-- 服务以**自动启动**方式安装：**安装一次，重启电脑后依然生效**，无需重复操作。
-- 修改 `allow.txt` 无需重启驱动，下一次启动目标进程时即按新状态判断。
-
-### 进程信息（已核实）
-
-| 软件 | 主进程 | 安装位置 | 已知辅助进程 |
-|---|---|---|---|
-| 网易云音乐 PC 版 | `cloudmusic.exe` | `%LOCALAPPDATA%\Netease\CloudMusic\` | `cloudmusic_reporter.exe` 等（前缀 `cloudmusic` 全覆盖） |
-| QQ音乐 PC 版 | `QQMusic.exe` | `C:\Program Files (x86)\Tencent\QQMusic\` | `QQMusicExternal.exe`、`qmbrowser.exe` 等（前缀 `qqmusic` / `qmbrowser` 全覆盖） |
-
-> 注：针对 Windows 桌面版（Win32）客户端。微软商店的 UWP 版本（如“QQ音乐 UWP”）进程模型不同，不在本驱动拦截范围内。
-
-## 3. 快速开始（共 4 步）
-
-> 全程需要**管理员权限**。`mkctl.exe` 已声明需要管理员，双击会弹 UAC；建议在“管理员命令提示符 / PowerShell”中操作。
-
-把 `mkctl.exe` 和 `MusicKiller.sys` 放在**同一目录**，然后：
+把 `MusicKiller.exe` 下载到任意位置，**双击运行一次没有反应是正常的**（它已进入后台静默监控）。推荐使用命令行安装以便看到提示：
 
 ```bat
-:: 第 1 步：开启测试签名模式（自签名驱动需要，只需设置一次）
-mkctl testsign on
-
-:: 第 2 步：重启电脑（必须，让测试签名模式生效）
-
-:: 第 3 步：重启回来后，一键安装并启动驱动
-mkctl setup
-
-:: 第 4 步：验证
-mkctl status
+MusicKiller.exe install
 ```
 
-`mkctl status` 显示如下即为成功：
+安装会：复制程序到 `%LOCALAPPDATA%\MusicKiller\` → 注册开机自启（当前用户，**免管理员**）→ 立即在后台启动监控。
+
+所有用户生效（需管理员 cmd）：`MusicKiller.exe install all`
+
+### 2. 验证
+
+```bat
+MusicKiller.exe status
+```
 
 ```
-驱动服务:   已安装, 状态 = 运行中 (RUNNING)
-启动类型:   自动启动 (重启后自动加载)
-驱动文件:   C:\Windows\System32\drivers\MusicKiller.sys (存在)
+开机自启(当前用户): 已设置 -> "C:\Users\xxx\AppData\Local\MusicKiller\MusicKiller.exe"
+监控运行:   正在后台静默运行
 allow.txt:  不存在 -> 拦截模式 (拦截网易云/QQ音乐)
-测试签名:   已启用
 ```
 
-## 4. 验证拦截效果
+然后打开网易云音乐/QQ音乐试试——窗口最多闪一下就会被关闭。
 
-1. 确认处于拦截模式（`C:\allow.txt` 不存在，默认即如此）；
-2. 双击打开网易云音乐或 QQ音乐；
-3. **预期结果**：进程无法启动（系统提示“拒绝访问”或程序一闪而过）；如果软件原本就在运行，驱动启动时会被直接结束。
-4. 创建放行文件后再次打开，软件正常启动：
+### 3. 放行开关
 
 ```bat
-mkctl allow on    :: 创建 C:\allow.txt，放行
-mkctl allow off   :: 删除 C:\allow.txt，恢复拦截
+MusicKiller.exe allow on     :: 创建 C:\allow.txt，放行（需管理员）
+MusicKiller.exe allow off    :: 删除 C:\allow.txt，恢复拦截
 ```
 
-## 5. 命令参考
+即改即生效，无需重启任何东西。
+
+### 4. 命令一览
 
 | 命令 | 作用 |
 |---|---|
-| `mkctl setup` | 一键安装 + 启动驱动（含测试签名检查） |
-| `mkctl install [sys路径]` | 仅安装驱动服务（自动启动）。默认复制同目录的 `MusicKiller.sys` 到 `C:\Windows\System32\drivers\` |
-| `mkctl start` | 启动驱动 |
-| `mkctl stop` | 停止驱动（临时解除拦截） |
-| `mkctl restart` | 重启驱动 |
-| `mkctl status` | 查询：驱动状态 / 启动类型 / allow.txt / 测试签名 |
-| `mkctl uninstall` | 停止并卸载驱动（删除服务与驱动文件） |
-| `mkctl allow on\|off\|status` | 创建 / 删除 / 查询 `C:\allow.txt` |
-| `mkctl testsign on\|off` | 开启 / 关闭测试签名模式（改后需重启） |
+| `MusicKiller.exe`（无参数） | 后台静默监控模式（开机自启调用的就是它） |
+| `run` | 前台监控（可看实时日志，Ctrl+C 退出） |
+| `kill` | 立即清理一次目标进程 |
+| `install` / `install all` | 安装开机自启（当前用户 / 所有用户） |
+| `uninstall` | 卸载（停止监控 + 删自启 + 删文件） |
+| `stop` | 停止后台监控（不卸载，下次登录仍会自启） |
+| `status` | 查询自启/运行/放行状态 |
+| `allow on\|off\|status` | 放行开关 |
 
-## 6. 卸载
+### 5. 日志与卸载
+
+- 运行日志：`%LOCALAPPDATA%\MusicKiller\monitor.log`（记录每次击杀）
+- 卸载：`MusicKiller.exe uninstall`
+
+### 6. EXE版已知限制（诚实说明）
+
+- 轮询间隔 1 秒：目标进程**可能闪一下窗口**再被杀（驱动版则完全无法启动）。
+- 若目标以**管理员身份**运行而监控程序不是管理员，则无法结束它（极少见）。
+- 懂技术的用户可以改名绕过（按进程名前缀匹配）。
+- 微软商店 UWP 版（如"QQ音乐 UWP"）进程模型不同，不在拦截范围内。
+
+---
+
+## 二、进程匹配说明（已核实）
+
+| 软件 | 主进程 | 安装位置 | 匹配前缀 |
+|---|---|---|---|
+| 网易云音乐 PC 版 | `cloudmusic.exe` | `%LOCALAPPDATA%\Netease\CloudMusic\` | `cloudmusic` |
+| QQ音乐 PC 版 | `QQMusic.exe` | `C:\Program Files (x86)\Tencent\QQMusic\` | `qqmusic`、`qmbrowser` |
+
+前缀匹配大小写不敏感，主程序与辅助进程（如 `cloudmusic_reporter.exe`、`QQMusicExternal.exe`、`qmbrowser.exe`）全覆盖。
+
+---
+
+## 三、驱动版（进阶，可选）
+
+仅在需要"进程连启动都不可能"的最强拦截时使用。文件：`MusicKiller.sys`（内核驱动，CI 已测试签名）+ `mkctl.exe`（控制器）。
+
+> 原理参考微软官方驱动示例 `Windows-driver-samples/general/obcallback`（`PsSetCreateProcessNotifyRoutineEx` 拒绝进程创建）。
+
+### 快速开始（共 4 步，全程管理员）
 
 ```bat
-mkctl uninstall
+mkctl testsign on     :: 1. 开测试签名（Secure Boot 开启时需先关：BIOS 里 Disabled）
+                      :: 2. 重启电脑
+mkctl setup           :: 3. 一键安装并启动驱动（自动启动，重启永久生效）
+mkctl status          :: 4. 查看状态
 ```
 
-会停止驱动、删除服务（重启后不再加载）、删除 `C:\Windows\System32\drivers\MusicKiller.sys`。如需恢复原样，可再执行 `mkctl testsign off` 并重启关闭测试签名模式。
+### 驱动版命令
 
-## 7. 常见问题（FAQ）
+| 命令 | 作用 |
+|---|---|
+| `mkctl setup` | 一键安装 + 启动驱动 |
+| `mkctl install [sys路径]` | 仅安装驱动服务 |
+| `mkctl start` / `stop` / `restart` | 启动 / 停止 / 重启驱动 |
+| `mkctl status` | 驱动状态 / 启动类型 / allow.txt / 测试签名 / Secure Boot |
+| `mkctl uninstall` | 停止并卸载驱动 |
+| `mkctl allow on\|off\|status` | 放行开关 |
+| `mkctl testsign on\|off` | 测试签名模式（改后需重启） |
 
-**Q1：`mkctl start` 报错 577 / “驱动签名验证失败”？**
-测试签名模式未开启或未重启。执行 `mkctl testsign on` → 重启 → `mkctl start`。确认 `mkctl status` 里“测试签名: 已启用”。
+### 驱动版 FAQ
 
-**Q2：`mkctl testsign on` 失败 / 提示“被安全启动策略保护”？**
-电脑开启了 Secure Boot（安全启动），它禁止开启测试签名。进入 BIOS/UEFI 将 Secure Boot 设为 Disabled，再重新执行命令。v1.1 起 mkctl 会直接显示 bcdedit 的原始错误输出并自动检测 Secure Boot 状态（`mkctl status` 中也能看到）。也可按 Win+R 运行 `msinfo32`，查看“安全启动状态”确认。
+**Q：`mkctl testsign on` 失败 / "被安全启动策略保护"？**
+Secure Boot 开着。进 BIOS/UEFI 关闭 Secure Boot 后重试。v1.1 起 mkctl 会回显 bcdedit 原始错误并自动检测 Secure Boot（`mkctl status` 里也显示）。
 
-**Q3：为什么不用官方签名？**
-商业代码签名证书需向 CA 付费申请并经过微软 attestation 签名，个人学习项目一般用测试签名即可。本仓库 CI 每次构建自动生成自签名测试证书并签名。
+**Q：`mkctl start` 报错 577？**
+测试签名未生效：确认 `mkctl status` 显示"测试签名: 已启用"，没启用就 `mkctl testsign on` → 重启。
 
-**Q4：拦截后双击软件弹“拒绝访问”窗口，正常吗？**
-正常。驱动在进程创建阶段直接拒绝，这是系统对该错误的提示。软件不会真正启动。
+**Q：测试模式水印？**
+开启测试签名后桌面右下角会有"测试模式"水印，纯外观。个别带反作弊的游戏（Valorant 等）会因此拒绝运行。
 
-**Q5：软件改名/换路径能绕过吗？**
-按**镜像文件名前缀**匹配（`cloudmusic*` / `qqmusic*` / `qmbrowser*`，大小写不敏感），与安装路径无关；改文件名确实可绕过。如需增加/修改目标，编辑 `driver/driver.c` 中的 `g_TargetPrefixes` 数组，重新编译即可。
+**Q：安全吗？会蓝屏吗？**
+驱动约 200 行，只用文档化 API，无 hook 无补丁；自动启动服务在系统起来后才加载，加载失败不影响开机；安全模式不会加载它，可进安全模式 `sc delete MusicKiller` 摘除。风险极低，但仍建议先在虚拟机体验。
 
-**Q6：驱动会影响系统稳定性吗？**
-驱动只在进程创建回调中做文件名比较与（命中时）一次文件存在性检查，无 Hook、无补丁、不修改任何系统或其他进程内存，可随时 `mkctl stop` 卸载停止。
+---
 
-**Q7：360/电脑管家等安全软件报毒？**
-内核驱动 + 进程拦截行为容易被启发式查杀误报。请将两个文件加入信任区，或在虚拟机/自律专用机上使用。
+## 四、自行构建（GitHub Actions）
 
-## 8. 自行构建（GitHub Actions）
-
-本仓库自带 CI（`.github/workflows/build.yml`），无需本地安装 WDK：
+无需本地装 WDK/VS，打 tag 即可，流水线自动编译+签名+发 Release：
 
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+git tag v2.0.0
+git push origin v2.0.0
 ```
 
-流水线会在 `windows-2022` 上安装 WDK 10.0.22621 → MSBuild 编译驱动与加载器 → 自签名测试证书签名 `.sys` → 上传构建产物，并按 tag 自动创建 GitHub Release 附上 `MusicKiller.sys`、`mkctl.exe` 与说明书。
+## 五、免责声明
 
-## 9. 免责声明
-
-本工具用于学习 Windows 驱动开发与个人自律（如专注学习时屏蔽娱乐软件）。使用者需获得目标计算机所有者的授权。作者不对任何滥用行为负责。
+本工具用于学习 Windows 编程与**个人自律**（如专注学习时屏蔽娱乐软件）。使用者需获得目标计算机所有者的授权。作者不对任何滥用行为负责。

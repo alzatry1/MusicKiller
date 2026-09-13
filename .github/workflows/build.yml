@@ -78,7 +78,9 @@ jobs:
           Copy-Item (Get-ChildItem -Path . -Recurse -Filter "MusicKiller.sys" | Select-Object -First 1).FullName out\
           Copy-Item (Get-ChildItem -Path . -Recurse -Filter "mkctl.exe" -File |
                        Where-Object { $_.FullName -match "Release" } | Select-Object -First 1).FullName out\
-          Copy-Item README.md out\使用说明书.md
+          Copy-Item (Get-ChildItem -Path . -Recurse -Filter "MusicKiller.exe" -File |
+                       Where-Object { $_.FullName -match "Release" } | Select-Object -First 1).FullName out\
+          Copy-Item README.md out\README.md
           Get-ChildItem out | Format-Table Name, Length
 
       - name: Upload artifact
@@ -93,5 +95,5 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create ${{ github.ref_name }} .\out\MusicKiller.sys .\out\mkctl.exe .\out\使用说明书.md `
+          gh release create ${{ github.ref_name }} .\out\MusicKiller.exe .\out\MusicKiller.sys .\out\mkctl.exe .\out\README.md `
             --title "MusicKiller ${{ github.ref_name }}" --generate-notes
