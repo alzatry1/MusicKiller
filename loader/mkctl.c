@@ -243,7 +243,7 @@ static SC_HANDLE OpenMkService(DWORD access, SC_HANDLE* outScm)
 }
 
 /* ------------------------------------------------------------------------ */
-static DWORD WaitServiceState(SC_HANDLE svc, DWORD target, DWORD timeoutMs)
+static DWORD MkWaitServiceState(SC_HANDLE svc, DWORD target, DWORD timeoutMs)
 {
     SERVICE_STATUS_PROCESS ssp;
     DWORD needed;
@@ -412,7 +412,7 @@ static int CmdStart(void)
         return 1;
     }
 
-    state = WaitServiceState(svc, SERVICE_RUNNING, 0);
+    state = MkWaitServiceState(svc, SERVICE_RUNNING, 0);
     if (state == SERVICE_RUNNING) {
         printf("[*] 驱动已在运行中。\n");
         KillTargetsNow();
@@ -440,7 +440,7 @@ static int CmdStart(void)
         goto done;
     }
 
-    state = WaitServiceState(svc, SERVICE_RUNNING, WAIT_TIMEOUT_MS);
+    state = MkWaitServiceState(svc, SERVICE_RUNNING, WAIT_TIMEOUT_MS);
     if (state == SERVICE_RUNNING) {
         printf("[+] 驱动已启动, 拦截已生效。\n");
         KillTargetsNow();
@@ -471,7 +471,7 @@ static int CmdStop(void)
         return 1;
     }
 
-    state = WaitServiceState(svc, SERVICE_STOPPED, 0);
+    state = MkWaitServiceState(svc, SERVICE_STOPPED, 0);
     if (state == SERVICE_STOPPED) {
         printf("[*] 驱动已是停止状态。\n");
         ret = 0;
@@ -484,7 +484,7 @@ static int CmdStop(void)
         goto done;
     }
 
-    state = WaitServiceState(svc, SERVICE_STOPPED, WAIT_TIMEOUT_MS);
+    state = MkWaitServiceState(svc, SERVICE_STOPPED, WAIT_TIMEOUT_MS);
     if (state == SERVICE_STOPPED) {
         printf("[+] 驱动已停止, 拦截已解除。\n");
         ret = 0;
@@ -585,7 +585,7 @@ static int CmdUninstall(void)
         printf("[*] 服务不存在或无法打开, 尝试清理驱动文件...\n");
     } else {
         if (ControlService(svc, SERVICE_CONTROL_STOP, &status)) {
-            WaitServiceState(svc, SERVICE_STOPPED, WAIT_TIMEOUT_MS);
+            MkWaitServiceState(svc, SERVICE_STOPPED, WAIT_TIMEOUT_MS);
             printf("[*] 驱动已停止。\n");
         }
         if (!DeleteService(svc)) {

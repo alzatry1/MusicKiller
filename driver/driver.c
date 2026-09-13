@@ -20,7 +20,7 @@ Abstract:
     STATUS_ACCESS_DENIED.
 --*/
 
-#include <ntddk.h>
+#include <ntifs.h>
 
 #define MK_POOL_TAG  'liKM'   /* "MKil" */
 
@@ -30,10 +30,15 @@ DRIVER_UNLOAD MkDriverUnload;
 static const UNICODE_STRING g_AllowFilePath =
     RTL_CONSTANT_STRING(L"\\??\\C:\\allow.txt");
 
-/* Target image names (case-insensitive compare). */
-static PCWSTR g_TargetNames[] = {
-    L"cloudmusic.exe",   /* NetEase Cloud Music */
-    L"qqmusic.exe",      /* QQ Music */
+/* Target image name prefixes (case-insensitive).  Prefix matching covers
+   the main executables and their helper processes:
+     cloudmusic.exe / cloudmusic_reporter.exe ...  (NetEase Cloud Music)
+     QQMusic.exe    / QQMusicExternal.exe   ...  (QQ Music)
+     qmbrowser.exe                               (QQ Music embedded browser) */
+static PCWSTR g_TargetPrefixes[] = {
+    L"cloudmusic",
+    L"qqmusic",
+    L"qmbrowser",
 };
 
 /* ------------------------------------------------------------------------ */
@@ -52,7 +57,6 @@ MkIsTargetImageName(
     USHORT start;
     USHORT i;
     UNICODE_STRING fileName;
-    UNICODE_STRING target;
 
     if (ImagePath == NULL || ImagePath->Buffer == NULL || ImagePath->Length == 0) {
         return FALSE;
@@ -71,9 +75,11 @@ MkIsTargetImageName(
     fileName.Length = (USHORT)((chars - start) * sizeof(WCHAR));
     fileName.MaximumLength = fileName.Length;
 
-    for (i = 0; i < ARRAYSIZE(g_TargetNames); ++i) {
-        RtlInitUnicodeString(&target, g_TargetNames[i]);
-        if (RtlEqualUnicodeString(&fileName, &target, TRUE)) {
+    for (i = 0; i < ARRAYSIZE(g_TargetPrefixes); ++i) {
+        UNICODE_STRING prefix;
+        RtlInitUnicodeString(&prefix, g_TargetPrefixes[i]);
+        if (fileName.Length >= prefix.Length &&
+            RtlPrefixUnicodeString(&prefix, &fileName, TRUE)) {
             return TRUE;
         }
     }

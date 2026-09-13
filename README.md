@@ -18,13 +18,22 @@ Windows 10 64位 内核驱动工具：**拦截网易云音乐 / QQ音乐进程�
 
 ## 2. 工作原理
 
-- 驱动加载后向系统注册**进程创建回调**。任何新进程启动时，驱动检查其镜像文件名：
-  - 若是 `cloudmusic.exe`（网易云音乐）或 `qqmusic.exe`（QQ音乐）：
+- 驱动加载后向系统注册**进程创建回调**。任何新进程启动时，驱动检查其镜像文件名（按**前缀**匹配，大小写不敏感）：
+  - 命中 `cloudmusic*`（网易云音乐）/ `qqmusic*`（QQ音乐）/ `qmbrowser*`（QQ音乐内置浏览器）：
     - `C:\allow.txt` **存在** → 放行，正常启动；
     - `C:\allow.txt` **不存在** → 拒绝创建，系统提示“拒绝访问 / 无法启动”。
 - 驱动加载瞬间会**扫描并强制结束**已在运行的目标进程。
 - 服务以**自动启动**方式安装：**安装一次，重启电脑后依然生效**，无需重复操作。
 - 修改 `allow.txt` 无需重启驱动，下一次启动目标进程时即按新状态判断。
+
+### 进程信息（已核实）
+
+| 软件 | 主进程 | 安装位置 | 已知辅助进程 |
+|---|---|---|---|
+| 网易云音乐 PC 版 | `cloudmusic.exe` | `%LOCALAPPDATA%\Netease\CloudMusic\` | `cloudmusic_reporter.exe` 等（前缀 `cloudmusic` 全覆盖） |
+| QQ音乐 PC 版 | `QQMusic.exe` | `C:\Program Files (x86)\Tencent\QQMusic\` | `QQMusicExternal.exe`、`qmbrowser.exe` 等（前缀 `qqmusic` / `qmbrowser` 全覆盖） |
+
+> 注：针对 Windows 桌面版（Win32）客户端。微软商店的 UWP 版本（如“QQ音乐 UWP”）进程模型不同，不在本驱动拦截范围内。
 
 ## 3. 快速开始（共 4 步）
 
@@ -104,7 +113,7 @@ mkctl uninstall
 正常。驱动在进程创建阶段直接拒绝，这是系统对该错误的提示。软件不会真正启动。
 
 **Q5：软件改名/换路径能绕过吗？**
-按**镜像文件名**匹配（`cloudmusic.exe` / `qqmusic.exe`），与安装路径无关；改名确实可绕过。如需增加/修改目标，编辑 `driver/driver.c` 中的 `g_TargetNames` 数组，重新编译即可。
+按**镜像文件名前缀**匹配（`cloudmusic*` / `qqmusic*` / `qmbrowser*`，大小写不敏感），与安装路径无关；改文件名确实可绕过。如需增加/修改目标，编辑 `driver/driver.c` 中的 `g_TargetPrefixes` 数组，重新编译即可。
 
 **Q6：驱动会影响系统稳定性吗？**
 驱动只在进程创建回调中做文件名比较与（命中时）一次文件存在性检查，无 Hook、无补丁、不修改任何系统或其他进程内存，可随时 `mkctl stop` 卸载停止。
