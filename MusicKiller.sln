@@ -6,7 +6,7 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MusicKiller", "driver\Music
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mkctl", "loader\mkctl.vcxproj", "{07611F8B-2165-4ACE-A5AD-AA42961BB5B8}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "musickiller", "monitor\musickiller.vcxproj", "{2FDEDFF2-0EEC-401C-94DD-14872648D3FE}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MusicKillerMon", "monitor\musickiller.vcxproj", "{2FDEDFF2-0EEC-401C-94DD-14872648D3FE}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
