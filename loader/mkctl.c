@@ -390,12 +390,11 @@ done:
 }
 
 /* ------------------------------------------------------------------------ */
-/* 驱动加载后兜底清理一次仍在运行的目标进程 (正常情况下驱动自己会处理)。     */
+/* 驱动加载后兜底清理仍在运行的目标进程 (内核驱动在登录前已加载, 此处是双保险)。 */
 static void KillTargetsNow(void)
 {
     printf("[*] 清理正在运行的目标进程...\n");
-    RunCaptureW(L"taskkill.exe /F /T /IM cloudmusic.exe", NULL, 0);
-    RunCaptureW(L"taskkill.exe /F /T /IM QQMusic.exe", NULL, 0);
+    RunCaptureW(L"powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^(cloudmusic|qqmusic|qmbrowser)' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }\"", NULL, 0);
 }
 
 /* ------------------------------------------------------------------------ */
