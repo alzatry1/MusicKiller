@@ -103,8 +103,8 @@ mkctl uninstall
 **Q1：`mkctl start` 报错 577 / “驱动签名验证失败”？**
 测试签名模式未开启或未重启。执行 `mkctl testsign on` → 重启 → `mkctl start`。确认 `mkctl status` 里“测试签名: 已启用”。
 
-**Q2：`bcdedit /set testsigning on` 提示“被安全启动策略保护”？**
-电脑开启了 Secure Boot（安全启动）。进入 BIOS/UEFI 将 Secure Boot 设为 Disabled，再重新执行命令。（部分机器关闭后才可开启测试签名）
+**Q2：`mkctl testsign on` 失败 / 提示“被安全启动策略保护”？**
+电脑开启了 Secure Boot（安全启动），它禁止开启测试签名。进入 BIOS/UEFI 将 Secure Boot 设为 Disabled，再重新执行命令。v1.1 起 mkctl 会直接显示 bcdedit 的原始错误输出并自动检测 Secure Boot 状态（`mkctl status` 中也能看到）。也可按 Win+R 运行 `msinfo32`，查看“安全启动状态”确认。
 
 **Q3：为什么不用官方签名？**
 商业代码签名证书需向 CA 付费申请并经过微软 attestation 签名，个人学习项目一般用测试签名即可。本仓库 CI 每次构建自动生成自签名测试证书并签名。

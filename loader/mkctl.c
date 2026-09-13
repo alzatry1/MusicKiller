@@ -192,6 +192,50 @@ static DWORD RunCaptureW(const wchar_t* cmd, char* buf, DWORD bufSize)
 }
 
 /* ------------------------------------------------------------------------ */
+/* 控制台子进程输出是 OEM 代码页 (中文系统为 GBK), 原地转换为 UTF-8 再打印。 */
+static void OemBufToUtf8(char* buf, DWORD bufSize)
+{
+    int wlen;
+    int ulen;
+    wchar_t* wbuf;
+
+    if (buf == NULL || buf[0] == 0) {
+        return;
+    }
+    wlen = MultiByteToWideChar(CP_OEMCP, 0, buf, -1, NULL, 0);
+    if (wlen <= 1) {
+        return;
+    }
+    wbuf = (wchar_t*)malloc((size_t)wlen * sizeof(wchar_t));
+    if (wbuf == NULL) {
+        return;
+    }
+    MultiByteToWideChar(CP_OEMCP, 0, buf, -1, wbuf, wlen);
+    ulen = WideCharToMultiByte(CP_UTF8, 0, wbuf, -1, NULL, 0, NULL, NULL);
+    if (ulen > 0 && (DWORD)ulen <= bufSize) {
+        WideCharToMultiByte(CP_UTF8, 0, wbuf, -1, buf, (int)bufSize, NULL, NULL);
+    }
+    free(wbuf);
+}
+
+/* ------------------------------------------------------------------------ */
+/* 1 = Secure Boot 开启, 0 = 关闭, -1 = 无法确定 (非 UEFI 等)                */
+static int IsSecureBootOn(void)
+{
+    static char sb[512];
+    DWORD rc = RunCaptureW(
+        L"powershell.exe -NoProfile -Command \"try { if (Confirm-SecureBootUEFI) { 'SB_ON' } else { 'SB_OFF' } } catch { 'SB_UNKNOWN' }\"",
+        sb, (DWORD)sizeof(sb));
+    if (rc != 0) {
+        return -1;
+    }
+    if (strstr(sb, "SB_UNKNOWN")) return -1;
+    if (strstr(sb, "SB_OFF")) return 0;
+    if (strstr(sb, "SB_ON")) return 1;
+    return -1;
+}
+
+/* ------------------------------------------------------------------------ */
 /* 1 = 已启用, 0 = 未启用, -1 = 查询失败                                     */
 static int IsTestSigningEnabled(void)
 {
@@ -203,6 +247,7 @@ static int IsTestSigningEnabled(void)
     if (rc != 0) {
         return -1;
     }
+    OemBufToUtf8(buf, (DWORD)sizeof(buf));
 
     p = strstr(buf, "testsigning");
     if (p == NULL) {
@@ -566,6 +611,13 @@ static int CmdStatus(void)
            ts == 0 ? "未启用 (mkctl testsign on 后重启才能加载测试签名驱动)" :
                      "查询失败");
 
+    {
+        int sbState = IsSecureBootOn();
+        printf("Secure Boot: %s\n",
+               sbState == 1 ? "开启 (开着则无法启用测试签名)" :
+               sbState == 0 ? "关闭" : "未知 / 非 UEFI 系统");
+    }
+
     printf("======================================\n");
     return 0;
 }
@@ -668,23 +720,33 @@ static int CmdTestsign(const wchar_t* sub)
         printf("测试签名: %s\n", ts == 1 ? "已启用" : ts == 0 ? "未启用" : "查询失败");
         return 0;
     }
-    if (_wcsicmp(sub, L"on") == 0) {
-        rc = RunCaptureW(L"bcdedit.exe /set testsigning on", out, (DWORD)sizeof(out));
-        if (rc == 0) {
-            printf("[+] 已开启测试签名模式, 请重启电脑后生效。\n");
-            printf("    重启后执行 mkctl status 确认 “测试签名: 已启用”。\n");
-        } else {
-            printf("[!] 设置失败 (退出码 %lu)。\n", (unsigned long)rc);
-            printf("    若提示 “被安全启动策略保护”, 请进 BIOS/UEFI 关闭 Secure Boot 后重试。\n");
+    if (_wcsicmp(sub, L"on") == 0 || _wcsicmp(sub, L"off") == 0) {
+        int turnOn = (_wcsicmp(sub, L"on") == 0);
+        rc = RunCaptureW(turnOn ? L"bcdedit.exe /set testsigning on"
+                                : L"bcdedit.exe /set testsigning off",
+                         out, (DWORD)sizeof(out));
+        OemBufToUtf8(out, (DWORD)sizeof(out));
+        if (out[0]) {
+            printf("[bcdedit] %s\n", out);
         }
-        return rc == 0 ? 0 : 1;
-    }
-    if (_wcsicmp(sub, L"off") == 0) {
-        rc = RunCaptureW(L"bcdedit.exe /set testsigning off", out, (DWORD)sizeof(out));
         if (rc == 0) {
-            printf("[+] 已关闭测试签名模式, 请重启电脑后生效。\n");
+            printf("[+] 已%s测试签名模式, 请重启电脑后生效。\n", turnOn ? "开启" : "关闭");
+            if (turnOn) {
+                printf("    重启后执行 mkctl status 确认 “测试签名: 已启用”。\n");
+            }
         } else {
+            int sb;
             printf("[!] 设置失败 (退出码 %lu)。\n", (unsigned long)rc);
+            sb = IsSecureBootOn();
+            if (sb == 1) {
+                printf("    检测到 Secure Boot 已开启 —— 这就是失败原因。\n");
+                printf("    处理: 重启进 BIOS/UEFI (常见按键 Del/F2/F10/F12), 找到 Secure Boot 设为\n");
+                printf("          Disabled, 保存退出后重新执行 mkctl testsign on。\n");
+            } else if (sb == 0) {
+                printf("    Secure Boot 已关闭但仍失败, 请把上面 [bcdedit] 的输出发给作者排查。\n");
+            } else {
+                printf("    无法检测 Secure Boot 状态 (可能是非 UEFI 传统引导系统)。\n");
+            }
         }
         return rc == 0 ? 0 : 1;
     }
@@ -731,7 +793,7 @@ int wmain(int argc, wchar_t* argv[])
     SetConsoleOutputCP(CP_UTF8);
     SetConsoleCP(CP_UTF8);
 
-    printf("MusicKiller 驱动控制程序 v1.0 (目标: Windows 10 x64)\n\n");
+    printf("MusicKiller 驱动控制程序 v1.1 (目标: Windows 10 x64)\n\n");
 
     if (argc < 2) {
         PrintUsage();
